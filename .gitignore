@@ -1,42 +1,22 @@
 ```
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
 # Dependencies
-node_modules/
-
-# Build artifacts
-dist/
-build/
-*.min.js
-*.min.js.map
-*.min.mjs
-*.min.mjs.map
-
-# Environment variables
+venv/
+.venv/
 .env
 .env.local
-.env.*
+*.env.*
 
-# IDE and editor files
-.vscode/
-.idea/
-*.swp
-*.swo
+# Logs and temp files
+*.log
 *.tmp
 
-# Logs
-*.log
-
-# Coverage
-coverage/
-htmlcov/
-.coverage
-
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# Vite specific
-.vite/
-
-# Vue specific
-.vuepress/
+# Editors
+.vscode/
+.idea/
 ```

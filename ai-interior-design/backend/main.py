@@ -1,23 +1,20 @@
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.orm import Session
 from typing import List, Optional
 import os
 
-from database import engine, get_db, Base
-from models import DesignStyle
 from services.knowledge_base_service import KnowledgeBaseService
-from services.design_work_service import DesignWorkService
-from services.ai_service import AIService
+from services.ai_service import AliyunBailianService, VolcanoArkService
 
-# 创建数据库表
-Base.metadata.create_all(bind=engine)
+# 创建必要的目录
+os.makedirs("generated", exist_ok=True)
+os.makedirs("uploads", exist_ok=True)
 
 app = FastAPI(
     title="AI Interior Design Studio",
-    description="AI 室内设计系统 - 支持文生图、图生图，展示优秀设计作品",
-    version="1.0.0"
+    description="AI 室内设计系统 - 支持文生图、图生图，对接阿里云百炼和火山方舟，使用 RAG 知识库",
+    version="2.0.0"
 )
 
 # CORS 配置
@@ -30,87 +27,64 @@ app.add_middleware(
 )
 
 # 静态文件目录
-os.makedirs("generated", exist_ok=True)
-os.makedirs("uploads", exist_ok=True)
 app.mount("/generated", StaticFiles(directory="generated"), name="generated")
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
-# AI 服务实例
-ai_service = AIService()
+# AI 服务实例 - 支持阿里云百炼和火山方舟
+aliyun_service = AliyunBailianService()
+volcano_service = VolcanoArkService()
+
+# 知识库服务实例 - 使用阿里云百炼 RAG 知识库
+knowledge_service = KnowledgeBaseService()
 
 
-# ==================== 知识库接口 ====================
+# ==================== 知识库接口 (RAG) ====================
 
-@app.post("/api/knowledge/", tags=["知识库"])
-def add_knowledge(
-    style: str = Form(...),
-    prompt: str = Form(...),
-    image_url: str = Form(...),
-    description: Optional[str] = Form(None),
-    tags: Optional[str] = Form(None),
-    db: Session = Depends(get_db)
+@app.post("/api/knowledge/upload", tags=["知识库"])
+async def upload_knowledge_document(
+    file: UploadFile = File(...),
+    description: Optional[str] = Form(None)
 ):
-    """添加知识条目到知识库"""
-    return KnowledgeBaseService.add_knowledge(
-        db=db,
-        style=style,
-        prompt=prompt,
-        image_url=image_url,
-        description=description,
-        tags=tags
-    )
+    """上传文档到阿里云百炼 RAG 知识库"""
+    # 保存临时文件
+    temp_path = f"uploads/temp_{file.filename}"
+    with open(temp_path, "wb") as buffer:
+        content = await file.read()
+        buffer.write(content)
+    
+    try:
+        result = await knowledge_service.upload_document(temp_path, description)
+        return result
+    finally:
+        # 清理临时文件
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
-@app.get("/api/knowledge/", tags=["知识库"])
-def get_knowledge(style: Optional[str] = None, db: Session = Depends(get_db)):
-    """获取知识库条目，可按风格筛选"""
-    if style:
-        return KnowledgeBaseService.get_by_style(db, style)
-    return KnowledgeBaseService.get_all(db)
+@app.get("/api/knowledge/list", tags=["知识库"])
+async def list_knowledge_documents(limit: int = 20):
+    """列出知识库中的文档"""
+    return await knowledge_service.list_documents(limit)
+
+
+@app.delete("/api/knowledge/{document_id}", tags=["知识库"])
+async def delete_knowledge_document(document_id: str):
+    """删除知识库文档"""
+    return await knowledge_service.delete_knowledge(document_id)
 
 
 @app.get("/api/knowledge/search", tags=["知识库"])
-def search_knowledge(keywords: str, style: Optional[str] = None, db: Session = Depends(get_db)):
-    """搜索知识库中的提示词"""
-    return KnowledgeBaseService.search_prompts(db, keywords, style)
+async def search_knowledge(keywords: str, style: Optional[str] = None, top_k: int = 10):
+    """搜索知识库中的相关内容（RAG 语义搜索）"""
+    results = await knowledge_service.search_prompts(keywords, style, top_k)
+    return {"results": results, "count": len(results)}
 
 
-# ==================== 设计作品接口 ====================
-
-@app.post("/api/works/", tags=["设计作品"])
-def add_work(
-    title: str = Form(...),
-    style: str = Form(...),
-    image_url: str = Form(...),
-    description: Optional[str] = Form(None),
-    room_type: Optional[str] = Form(None),
-    db: Session = Depends(get_db)
-):
-    """添加新的设计作品"""
-    return DesignWorkService.add_work(
-        db=db,
-        title=title,
-        style=style,
-        image_url=image_url,
-        description=description,
-        room_type=room_type
-    )
-
-
-@app.get("/api/works/", tags=["设计作品"])
-def get_works(style: Optional[str] = None, room_type: Optional[str] = None, db: Session = Depends(get_db)):
-    """获取设计作品列表"""
-    if style:
-        return DesignWorkService.get_by_style(db, style)
-    elif room_type:
-        return DesignWorkService.get_by_room_type(db, room_type)
-    return DesignWorkService.get_all(db)
-
-
-@app.get("/api/works/search", tags=["设计作品"])
-def search_works(keywords: str, style: Optional[str] = None, db: Session = Depends(get_db)):
-    """搜索设计作品"""
-    return DesignWorkService.search_works(db, keywords, style)
+@app.get("/api/knowledge/similar/{style}", tags=["知识库"])
+async def get_similar_knowledge(style: str, limit: int = 5):
+    """获取相似风格的提示词"""
+    results = await knowledge_service.get_similar_prompts(style, limit)
+    return {"results": results, "count": len(results)}
 
 
 # ==================== AI 生成接口 ====================
@@ -119,36 +93,42 @@ def search_works(keywords: str, style: Optional[str] = None, db: Session = Depen
 async def text_to_image(
     prompt: str = Form(...),
     style: str = Form("modern"),
-    negative_prompt: Optional[str] = Form("blurry, low quality, distorted"),
-    db: Session = Depends(get_db)
+    negative_prompt: Optional[str] = Form("模糊，低质量，失真，变形"),
+    provider: str = Form("aliyun"),  # aliyun 或 volcano
+    width: int = Form(1024),
+    height: int = Form(1024)
 ):
     """
     文生图：根据文本描述生成室内设计图
     
-    会自动从知识库中获取相似风格的优秀提示词进行增强
+    会自动从 RAG 知识库中获取相关知识进行提示词增强
     """
-    result = await ai_service.generate_text_to_image(
-        prompt=prompt,
-        style=style,
-        negative_prompt=negative_prompt or "blurry, low quality, distorted"
-    )
+    # 使用 RAG 增强提示词
+    enhanced_prompt = await knowledge_service.enhance_prompt_with_rag(prompt, style)
     
-    # 保存生成记录
-    from models import GeneratedImage
-    generated = GeneratedImage(
-        prompt=prompt,
-        style=style,
-        image_url=result["image_url"],
-        generation_type="text-to-image"
-    )
-    db.add(generated)
-    db.commit()
-    db.refresh(generated)
+    # 选择服务商
+    if provider == "volcano":
+        result = await volcano_service.generate_text_to_image(
+            prompt=enhanced_prompt,
+            style=style,
+            negative_prompt=negative_prompt or "模糊，低质量，失真",
+            width=width,
+            height=height
+        )
+    else:
+        result = await aliyun_service.generate_text_to_image(
+            prompt=enhanced_prompt,
+            style=style,
+            negative_prompt=negative_prompt or "模糊，低质量，失真，变形",
+            width=width,
+            height=height
+        )
     
     return {
         **result,
-        "id": generated.id,
-        "knowledge_used": True  # 标识是否使用了知识库增强
+        "original_prompt": prompt,
+        "enhanced_prompt": enhanced_prompt,
+        "rag_used": True
     }
 
 
@@ -158,12 +138,12 @@ async def image_to_image(
     style: str = Form("modern"),
     image: UploadFile = File(...),
     strength: float = Form(0.7),
-    db: Session = Depends(get_db)
+    provider: str = Form("aliyun")  # aliyun 或 volcano
 ):
     """
     图生图：上传参考图生成新的设计方案
     
-    结合参考图和文本描述，从知识库获取提示词增强生成效果
+    结合参考图和文本描述，从 RAG 知识库获取知识增强生成效果
     """
     # 读取上传的图片
     contents = await image.read()
@@ -171,44 +151,46 @@ async def image_to_image(
     image_base64 = base64.b64encode(contents).decode('utf-8')
     
     # 保存参考图
-    import os
     upload_path = f"uploads/{image.filename}"
     with open(upload_path, "wb") as f:
         f.write(contents)
     
-    result = await ai_service.generate_image_to_image(
-        image_data=image_base64,
-        prompt=prompt,
-        style=style,
-        strength=strength
-    )
+    # 使用 RAG 增强提示词
+    enhanced_prompt = await knowledge_service.enhance_prompt_with_rag(prompt, style)
     
-    # 保存生成记录
-    from models import GeneratedImage
-    generated = GeneratedImage(
-        prompt=prompt,
-        style=style,
-        image_url=result["image_url"],
-        generation_type="image-to-image",
-        reference_image_url=upload_path
-    )
-    db.add(generated)
-    db.commit()
-    db.refresh(generated)
+    # 选择服务商
+    if provider == "volcano":
+        result = await volcano_service.generate_image_to_image(
+            image_data=image_base64,
+            prompt=enhanced_prompt,
+            style=style,
+            strength=strength
+        )
+    else:
+        result = await aliyun_service.generate_image_to_image(
+            image_data=image_base64,
+            prompt=enhanced_prompt,
+            style=style,
+            strength=strength
+        )
     
     return {
         **result,
-        "id": generated.id,
+        "original_prompt": prompt,
+        "enhanced_prompt": enhanced_prompt,
         "reference_image": upload_path,
-        "knowledge_used": True
+        "rag_used": True
     }
 
 
 @app.get("/api/generate/history", tags=["AI 生成"])
-def get_generation_history(db: Session = Depends(get_db)):
-    """获取生成历史记录"""
-    from models import GeneratedImage
-    return db.query(GeneratedImage).order_by(GeneratedImage.created_at.desc()).limit(50).all()
+def get_generation_history():
+    """获取生成历史记录
+    
+    注意：由于不再使用数据库存储，此接口返回空列表
+    实际应用中可以集成阿里云日志服务或其他存储方案
+    """
+    return {"message": "历史记录功能需要配置外部存储服务", "history": []}
 
 
 # ==================== 样式枚举接口 ====================
@@ -216,7 +198,10 @@ def get_generation_history(db: Session = Depends(get_db)):
 @app.get("/api/styles", tags=["基础数据"])
 def get_styles():
     """获取所有支持的设计风格"""
-    return [style.value for style in DesignStyle]
+    return [
+        "modern", "minimalist", "industrial", "scandinavian",
+        "traditional", "bohemian", "contemporary", "rustic"
+    ]
 
 
 @app.get("/api/room-types", tags=["基础数据"])
@@ -230,14 +215,18 @@ def get_room_types():
 @app.get("/")
 def read_root():
     return {
-        "message": "欢迎使用 AI Interior Design Studio",
+        "message": "欢迎使用 AI Interior Design Studio v2.0",
         "docs": "/docs",
         "features": [
-            "文生图 - 通过文本描述生成室内设计效果图",
-            "图生图 - 上传参考图生成新的设计方案",
-            "作品展示 - 按风格分类展示公司优秀设计作品",
-            "知识库 - 存储优秀设计提示词和设计图稿链接"
-        ]
+            "文生图 - 通过文本描述生成室内设计效果图（支持阿里云百炼、火山方舟）",
+            "图生图 - 上传参考图生成新的设计方案（支持阿里云百炼、火山方舟）",
+            "RAG 知识库 - 使用阿里云百炼知识库进行语义检索和提示词增强",
+            "多模型支持 - 可切换不同的国内 AI 模型服务商"
+        ],
+        "configuration": {
+            "aliyun_bailian": "配置 ALIYUN_BAILIAN_API_KEY 和 ALIYUN_KNOWLEDGE_BASE_ID 环境变量",
+            "volcano_ark": "配置 VOLCANO_ARK_API_KEY 环境变量"
+        }
     }
 
 
