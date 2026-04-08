@@ -4,24 +4,26 @@ import base64
 import os
 import logging
 
-logging.basicConfig(level=logging.INFO)
+from config import settings
+
+logging.basicConfig(level=settings.LOG_LEVEL)
 logger = logging.getLogger(__name__)
 
 
 class AliyunBailianService:
     """阿里云百炼服务 - 支持文生图、图生图和 RAG 知识库"""
     
-    def __init__(self, api_key: str = "", region: str = "cn-shanghai"):
-        self.api_key = api_key or os.getenv("ALIYUN_BAILIAN_API_KEY", "")
-        self.region = region
+    def __init__(self):
+        self.api_key = settings.ALIYUN_BAILIAN_API_KEY
+        self.region = settings.ALIYUN_REGION
         # 阿里云百炼 API 端点
-        self.base_url = f"https://dashscope.aliyuncs.com/api/v1"
+        self.base_url = settings.ALIYUN_BASE_URL
         # 文生图模型 - 通义万相
-        self.text_to_image_model = "wanx-v1"
+        self.text_to_image_model = settings.ALIYUN_TEXT_TO_IMAGE_MODEL
         # 图生图模型
-        self.image_to_image_model = "wanx-v1"
+        self.image_to_image_model = settings.ALIYUN_IMAGE_TO_IMAGE_MODEL
         # RAG 知识库 ID
-        self.knowledge_base_id = os.getenv("ALIYUN_KNOWLEDGE_BASE_ID", "")
+        self.knowledge_base_id = settings.ALIYUN_KNOWLEDGE_BASE_ID
     
     async def generate_text_to_image(
         self,
@@ -308,13 +310,13 @@ class AliyunBailianService:
 class VolcanoArkService:
     """火山方舟服务 - 支持文生图、图生图"""
     
-    def __init__(self, api_key: str = ""):
-        self.api_key = api_key or os.getenv("VOLCANO_ARK_API_KEY", "")
+    def __init__(self):
+        self.api_key = settings.VOLCANO_ARK_API_KEY
         # 火山方舟 API 端点
-        self.base_url = "https://ark.cn-beijing.volces.com/api/v1"
+        self.base_url = settings.VOLCANO_BASE_URL
         # 文生图模型 - 可灵或豆包视觉理解
-        self.text_to_image_model = "doubao-vision-pro-32k"
-        self.image_to_image_model = "doubao-vision-pro-32k"
+        self.text_to_image_model = settings.VOLCANO_TEXT_TO_IMAGE_MODEL
+        self.image_to_image_model = settings.VOLCANO_IMAGE_TO_IMAGE_MODEL
     
     async def generate_text_to_image(
         self,

@@ -2,7 +2,9 @@ from typing import List, Optional, Dict, Any
 import os
 import logging
 
-logging.basicConfig(level=logging.INFO)
+from config import settings
+
+logging.basicConfig(level=settings.LOG_LEVEL)
 logger = logging.getLogger(__name__)
 
 
@@ -14,9 +16,9 @@ class KnowledgeBaseService:
     """
     
     def __init__(self):
-        self.api_key = os.getenv("ALIYUN_BAILIAN_API_KEY", "")
-        self.knowledge_base_id = os.getenv("ALIYUN_KNOWLEDGE_BASE_ID", "")
-        self.base_url = "https://dashscope.aliyuncs.com/api/v1"
+        self.api_key = settings.ALIYUN_BAILIAN_API_KEY
+        self.knowledge_base_id = settings.ALIYUN_KNOWLEDGE_BASE_ID
+        self.base_url = settings.ALIYUN_BASE_URL
     
     async def query_knowledge(
         self,

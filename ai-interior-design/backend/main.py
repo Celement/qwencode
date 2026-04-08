@@ -4,31 +4,32 @@ from fastapi.staticfiles import StaticFiles
 from typing import List, Optional
 import os
 
+from config import settings
 from services.knowledge_base_service import KnowledgeBaseService
 from services.ai_service import AliyunBailianService, VolcanoArkService
 
 # 创建必要的目录
-os.makedirs("generated", exist_ok=True)
-os.makedirs("uploads", exist_ok=True)
+os.makedirs(settings.UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(settings.GENERATED_FOLDER, exist_ok=True)
 
 app = FastAPI(
-    title="AI Interior Design Studio",
-    description="AI 室内设计系统 - 支持文生图、图生图，对接阿里云百炼和火山方舟，使用 RAG 知识库",
-    version="2.0.0"
+    title=settings.APP_NAME,
+    description=settings.APP_DESCRIPTION,
+    version=settings.APP_VERSION
 )
 
 # CORS 配置
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
+    allow_methods=settings.CORS_ALLOW_METHODS,
+    allow_headers=settings.CORS_ALLOW_HEADERS,
 )
 
 # 静态文件目录
-app.mount("/generated", StaticFiles(directory="generated"), name="generated")
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+app.mount(f"/{settings.GENERATED_FOLDER}", StaticFiles(directory=settings.GENERATED_FOLDER), name="generated")
+app.mount(f"/{settings.UPLOAD_FOLDER}", StaticFiles(directory=settings.UPLOAD_FOLDER), name="uploads")
 
 # AI 服务实例 - 支持阿里云百炼和火山方舟
 aliyun_service = AliyunBailianService()
@@ -198,16 +199,13 @@ def get_generation_history():
 @app.get("/api/styles", tags=["基础数据"])
 def get_styles():
     """获取所有支持的设计风格"""
-    return [
-        "modern", "minimalist", "industrial", "scandinavian",
-        "traditional", "bohemian", "contemporary", "rustic"
-    ]
+    return settings.SUPPORTED_STYLES
 
 
 @app.get("/api/room-types", tags=["基础数据"])
 def get_room_types():
     """获取房间类型列表"""
-    return ["客厅", "卧室", "厨房", "卫生间", "书房", "餐厅", "阳台", "玄关"]
+    return settings.ROOM_TYPES
 
 
 # ==================== 首页 ====================
@@ -215,7 +213,7 @@ def get_room_types():
 @app.get("/")
 def read_root():
     return {
-        "message": "欢迎使用 AI Interior Design Studio v2.0",
+        "message": f"欢迎使用 {settings.APP_NAME} v{settings.APP_VERSION}",
         "docs": "/docs",
         "features": [
             "文生图 - 通过文本描述生成室内设计效果图（支持阿里云百炼、火山方舟）",
@@ -225,8 +223,11 @@ def read_root():
         ],
         "configuration": {
             "aliyun_bailian": "配置 ALIYUN_BAILIAN_API_KEY 和 ALIYUN_KNOWLEDGE_BASE_ID 环境变量",
-            "volcano_ark": "配置 VOLCANO_ARK_API_KEY 环境变量"
-        }
+            "volcano_ark": "配置 VOLCANO_ARK_API_KEY 环境变量",
+            "config_file": "复制 config.example.py 为 config.py 并修改配置"
+        },
+        "supported_styles": settings.SUPPORTED_STYLES,
+        "room_types": settings.ROOM_TYPES
     }
 
 
